@@ -43,7 +43,7 @@ export type SupabaseSchemaOf<Client extends SupabaseClient> =
 export type SupabaseTableOf<
     Client extends SupabaseClient,
     SchemaName extends SchemaNameOf<Client>,
-> = DatabaseOf<Client>[SchemaName]['Tables'];
+> = DatabaseOf<Client>[SchemaName]['Tables'] & DatabaseOf<Client>[SchemaName]['Views'];
 
 export type SupabaseCollectionOf<
     Client extends SupabaseClient,
@@ -176,19 +176,6 @@ export function syncedSupabase<
     // but that's not ideal, maybe there's a better way
     const client = supabase!;
 
-    // If using last-sync mode then put it into soft delete mode
-    if (process.env.NODE_ENV === 'development' && changesSince === 'last-sync') {
-        if (!fieldCreatedAt) {
-            console.warn('[legend-state] fieldCreatedAt is required when using last-sync mode');
-        }
-        if (!fieldUpdatedAt) {
-            console.warn('[legend-state] fieldUpdatedAt is required when using last-sync mode');
-        }
-        if (!fieldDeleted) {
-            console.warn('[legend-state] fieldDeleted is required when using last-sync mode');
-        }
-    }
-
     const list =
         !actions || actions.includes('read')
             ? listParam
@@ -199,12 +186,7 @@ export function syncedSupabase<
                       const from = clientSchema.from(collection);
                       let select = selectFn ? selectFn(from) : from.select();
 
-                      // in last-sync mode, filter for rows updated more recently than the last sync
-                      if (changesSince === 'last-sync' && lastSync) {
-                          const date = new Date(lastSync).toISOString();
-                          select = select.gt(fieldUpdatedAt!, date);
-                      }
-                      // filter with filter parameter
+                      // If collection is a view, it may be read-only, so we adjust accordingly
                       if (filter) {
                           select = filter(select, params);
                       }
@@ -216,6 +198,7 @@ export function syncedSupabase<
                   }
             : undefined;
 
+    // Only include create, update, delete if the collection is not a view
     const create = createParam
         ? wrapSupabaseFn(createParam)
         : !actions || actions.includes('create')
